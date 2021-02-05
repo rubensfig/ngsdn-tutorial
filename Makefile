@@ -37,7 +37,7 @@ _start:
 	@mkdir -p tmp/onos
 	@NGSDN_TOPO_PY=${NGSDN_TOPO_PY} docker-compose up -d
 
-start: NGSDN_TOPO_PY := topo-v6.py
+start: NGSDN_TOPO_PY := topo-simple.py
 start: _start
 
 start-v4: NGSDN_TOPO_PY := topo-v4.py
@@ -107,13 +107,13 @@ clean:
 	-$(NGSDN_TUTORIAL_SUDO) rm -rf app/src/main/resources/bmv2.json
 	-$(NGSDN_TUTORIAL_SUDO) rm -rf app/src/main/resources/p4info.txt
 
-p4-build: p4src/main.p4
+p4-build: p4src/basic.p4
 	$(info *** Building P4 program...)
 	@mkdir -p p4src/build
 	docker run --rm -v ${curr_dir}:/workdir -w /workdir ${P4C_IMG} \
 		p4c-bm2-ss --arch v1model -o p4src/build/bmv2.json \
 		--p4runtime-files p4src/build/p4info.txt --Wdisable=unsupported \
-		p4src/main.p4
+		p4src/basic.p4
 	@echo "*** P4 program compiled successfully! Output files are in p4src/build"
 
 p4-test:
