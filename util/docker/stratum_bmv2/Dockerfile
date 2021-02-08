@@ -36,7 +36,7 @@ ENV PIP_DEPS \
     ipaddress
 RUN pip install --no-cache-dir --root /output $PIP_DEPS
 
-FROM opennetworking/mn-stratum:latest@$MN_STRATUM_SHA as runtime
+FROM opennetworking/mn-stratum:latest as runtime
 
 ENV RUNTIME_DEPS \
     make
