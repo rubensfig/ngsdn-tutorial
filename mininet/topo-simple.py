@@ -102,9 +102,9 @@ class TutorialTopo(Topo):
 
         # IPv4 hosts attached to leaf 1
         h1a = self.addHost('h1a', mac="00:00:00:00:00:1A",
-                           ip='10.0.1.1/24')
+                           ip='10.0.1.2/24')
         h1b = self.addHost('h1b', mac="00:00:00:00:00:1B",
-                           ip='10.0.2.1/24')
+                           ip='10.0.2.2/24')
         self.addLink(h1a, leaf1)  # port 3
         self.addLink(h1b, leaf1)  # port 4
 
@@ -112,6 +112,13 @@ class TutorialTopo(Topo):
 def main():
     net = Mininet(topo=TutorialTopo(), controller=None)
     net.start()
+
+    h1 = net.get('h1a')
+    h1.setDefaultRoute("dev h1a-eth0 via 10.0.1.1")
+
+    h2 = net.get('h1b')
+    h2.setDefaultRoute("dev h1b-eth0 via 10.0.2.1")
+
     CLI(net)
     net.stop()
     print '#' * 80

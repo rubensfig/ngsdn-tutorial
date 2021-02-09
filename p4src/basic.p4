@@ -2,7 +2,10 @@
 #include <core.p4>
 #include <v1model.p4>
 
+const bit<16> TYPE_ARP  = 0x806;
 const bit<16> TYPE_IPV4 = 0x800;
+
+#define CPU_PORT 255
 
 /*************************************************************************
 *********************** H E A D E R S  ***********************************
@@ -12,12 +15,31 @@ typedef bit<9>  egressSpec_t;
 typedef bit<48> macAddr_t;
 typedef bit<32> ip4Addr_t;
 
+// packet in 
+@controller_header("packet_in")
+header packet_in_header_t {
+    bit<16>  ingress_port;
+}
+
 header ethernet_t {
     macAddr_t dstAddr;
     macAddr_t srcAddr;
     bit<16>   etherType;
 }
 
+// ARP IP protocol 
+header arp_t {
+    bit<8>  htype;      // HW type
+    bit<8>  ptype;      // Protocol type
+    bit<4>  hlen;       // HW addr len
+    bit<4>  oper;       // Proto addr len
+    bit<48> srcMacAddr; // source mac addr
+    bit<32> srcIPAddr;  // source IP addr
+    bit<48> dstMacAddr; // destination mac addr
+    bit<32> dstIPAddr;  // destination IP addr
+}
+
+// IPV4 protocol
 header ipv4_t {
     bit<4>    version;
     bit<4>    ihl;
@@ -38,8 +60,10 @@ struct metadata {
 }
 
 struct headers {
+    packet_in_header_t packet_in;
     ethernet_t   ethernet;
     ipv4_t       ipv4;
+    arp_t        arp;
 }
 
 /*************************************************************************
@@ -59,12 +83,18 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.ethernet);
         transition select(hdr.ethernet.etherType) {
             TYPE_IPV4: parse_ipv4;
+            TYPE_ARP: parse_arp;
             default: accept;
         }
     }
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
+        transition accept;
+    }
+
+    state parse_arp {
+        packet.extract(hdr.arp);
         transition accept;
     }
 
@@ -96,23 +126,42 @@ control MyIngress(inout headers hdr,
         hdr.ethernet.dstAddr = dstAddr;
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
-    
+
+    action do_send_to_cpu() {
+      standard_metadata.egress_spec = CPU_PORT;
+        hdr.packet_in.setValid();
+        hdr.packet_in.ingress_port = (bit<16>)standard_metadata.ingress_port;
+    }
+   
+    table send_arp_to_cpu {
+      actions = {
+        do_send_to_cpu;
+      }
+
+      default_action = do_send_to_cpu();
+    }
+
     table ipv4_lpm {
         key = {
             hdr.ipv4.dstAddr: lpm;
         }
         actions = {
             ipv4_forward;
+            do_send_to_cpu;
             drop;
             NoAction;
         }
         size = 1024;
-        default_action = NoAction();
+        default_action = do_send_to_cpu();
     }
     
     apply {
         if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
+        }
+
+        if (hdr.arp.isValid()) {
+            send_arp_to_cpu.apply();
         }
     }
 }
@@ -157,6 +206,7 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
+        packet.emit(hdr.packet_in);
         packet.emit(hdr.ethernet);
         packet.emit(hdr.ipv4);
     }
