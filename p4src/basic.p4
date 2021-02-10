@@ -172,6 +172,10 @@ control MyIngress(inout headers hdr,
     }
     
     apply {
+        if (hdr.packet_out.isValid()) {
+            standard_metadata.egress_spec = (bit<9>)hdr.packet_out.egress_port;
+	    hdr.packet_out.setInvalid();
+        }
         if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
@@ -180,9 +184,6 @@ control MyIngress(inout headers hdr,
             send_arp_to_cpu.apply();
         }
 
-        if (hdr.packet_out.isValid()) {
-            standard_metadata.egress_spec = (bit<9>)hdr.packet_out.egress_port;
-        }
     }
 }
 
