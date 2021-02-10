@@ -21,6 +21,12 @@ header packet_in_header_t {
     bit<16>  ingress_port;
 }
 
+// packet out
+@controller_header("packet_out")
+header packet_out_header_t {
+    bit<16>  egress_port;
+}
+
 header ethernet_t {
     macAddr_t dstAddr;
     macAddr_t srcAddr;
@@ -29,10 +35,11 @@ header ethernet_t {
 
 // ARP IP protocol 
 header arp_t {
-    bit<8>  htype;      // HW type
-    bit<8>  ptype;      // Protocol type
-    bit<4>  hlen;       // HW addr len
-    bit<4>  oper;       // Proto addr len
+    bit<16>  htype;      // HW type
+    bit<16>  ptype;      // Protocol type
+    bit<8>  hlen;       // HW addr len
+    bit<8>  oper;       // Proto addr len
+    bit<16>  opcode;       // Op code
     bit<48> srcMacAddr; // source mac addr
     bit<32> srcIPAddr;  // source IP addr
     bit<48> dstMacAddr; // destination mac addr
@@ -61,6 +68,7 @@ struct metadata {
 
 struct headers {
     packet_in_header_t packet_in;
+    packet_out_header_t packet_out;
     ethernet_t   ethernet;
     ipv4_t       ipv4;
     arp_t        arp;
@@ -76,7 +84,10 @@ parser MyParser(packet_in packet,
                 inout standard_metadata_t standard_metadata) {
 
     state start {
-        transition parse_ethernet;
+        transition select(standard_metadata.ingress_port) {
+		CPU_PORT: parse_packet_out;
+        	default:  parse_ethernet;
+	}
     }
 
     state parse_ethernet {
@@ -90,6 +101,11 @@ parser MyParser(packet_in packet,
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
+        transition accept;
+    }
+
+    state parse_packet_out {
+        packet.extract(hdr.packet_out);
         transition accept;
     }
 
@@ -163,6 +179,10 @@ control MyIngress(inout headers hdr,
         if (hdr.arp.isValid()) {
             send_arp_to_cpu.apply();
         }
+
+        if (hdr.packet_out.isValid()) {
+            standard_metadata.egress_spec = (bit<9>)hdr.packet_out.egress_port;
+        }
     }
 }
 
@@ -208,6 +228,7 @@ control MyDeparser(packet_out packet, in headers hdr) {
     apply {
         packet.emit(hdr.packet_in);
         packet.emit(hdr.ethernet);
+        packet.emit(hdr.arp);
         packet.emit(hdr.ipv4);
     }
 }
