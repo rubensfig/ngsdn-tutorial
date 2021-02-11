@@ -4,6 +4,7 @@
 
 const bit<16> TYPE_ARP  = 0x806;
 const bit<16> TYPE_IPV4 = 0x800;
+const bit<8> PROTO_ICMP = 1;
 
 #define CPU_PORT 255
 
@@ -19,6 +20,7 @@ typedef bit<32> ip4Addr_t;
 @controller_header("packet_in")
 header packet_in_header_t {
     bit<16>  ingress_port;
+    bit<16>  reason;
 }
 
 // packet out
@@ -62,6 +64,16 @@ header ipv4_t {
     ip4Addr_t dstAddr;
 }
 
+header icmp_t {
+    bit<8> icmp_type;
+    bit<8> icmp_code;
+    bit<16> checksum;
+    bit<16> identifier;
+    bit<16> sequence_number;
+    bit<32> gateway;
+    bit<48> reserv;
+}
+
 struct metadata {
     /* empty */
 }
@@ -72,6 +84,7 @@ struct headers {
     ethernet_t   ethernet;
     ipv4_t       ipv4;
     arp_t        arp;
+    icmp_t        icmp;
 }
 
 /*************************************************************************
@@ -101,6 +114,14 @@ parser MyParser(packet_in packet,
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
+        transition select(hdr.ipv4.protocol) {
+          PROTO_ICMP: parse_icmp;
+          default: accept;
+        }
+    }
+
+    state parse_icmp {
+        packet.extract(hdr.icmp);
         transition accept;
     }
 
@@ -147,8 +168,17 @@ control MyIngress(inout headers hdr,
       standard_metadata.egress_spec = CPU_PORT;
         hdr.packet_in.setValid();
         hdr.packet_in.ingress_port = (bit<16>)standard_metadata.ingress_port;
+        hdr.packet_in.reason = hdr.ethernet.etherType;
     }
    
+    action do_ipv4_send_to_cpu() {
+      standard_metadata.egress_spec = CPU_PORT;
+        hdr.packet_in.setValid();
+        hdr.arp.setInvalid();
+        hdr.packet_in.ingress_port = (bit<16>)standard_metadata.ingress_port;
+        hdr.packet_in.reason = hdr.ethernet.etherType;
+    }
+
     table send_arp_to_cpu {
       actions = {
         do_send_to_cpu;
@@ -163,12 +193,12 @@ control MyIngress(inout headers hdr,
         }
         actions = {
             ipv4_forward;
-            do_send_to_cpu;
+            do_ipv4_send_to_cpu;
             drop;
             NoAction;
         }
         size = 1024;
-        default_action = do_send_to_cpu();
+        default_action = do_ipv4_send_to_cpu();
     }
     
     apply {
@@ -202,23 +232,7 @@ control MyEgress(inout headers hdr,
 *************************************************************************/
 
 control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
-     apply {
-	update_checksum(
-	    hdr.ipv4.isValid(),
-            { hdr.ipv4.version,
-	      hdr.ipv4.ihl,
-              hdr.ipv4.diffserv,
-              hdr.ipv4.totalLen,
-              hdr.ipv4.identification,
-              hdr.ipv4.flags,
-              hdr.ipv4.fragOffset,
-              hdr.ipv4.ttl,
-              hdr.ipv4.protocol,
-              hdr.ipv4.srcAddr,
-              hdr.ipv4.dstAddr },
-            hdr.ipv4.hdrChecksum,
-            HashAlgorithm.csum16);
-    }
+     apply { }
 }
 
 /*************************************************************************
@@ -231,6 +245,7 @@ control MyDeparser(packet_out packet, in headers hdr) {
         packet.emit(hdr.ethernet);
         packet.emit(hdr.arp);
         packet.emit(hdr.ipv4);
+        packet.emit(hdr.icmp);
     }
 }
 
